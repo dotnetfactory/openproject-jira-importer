@@ -170,7 +170,10 @@ async function migrateIssues(
         subject: issue.fields.summary,
         description: {
           raw: Buffer.from(
-            convertAtlassianDocumentToText(issue.fields.description)
+            convertAtlassianDocumentToText(
+              // #22: prefer HTML rendered content if available
+              issue.renderedFields?.description ?? issue.fields.description
+            )
           ).toString("utf8"),
         },
         _links: {
@@ -249,11 +252,14 @@ async function migrateIssues(
       }
 
       // Process comments
-      if (issue.fields.comment && issue.fields.comment.comments.length > 0) {
+      // #22: prefer HTML rendered content if available
+      const commentsData =
+        issue.renderedFields?.comment ?? issue.fields.comment;
+      if (commentsData && commentsData.comments.length > 0) {
         const existingComments = await getExistingComments(workPackage.id);
         const existingCommentTexts = existingComments.map((c) => c.comment.raw);
 
-        for (const comment of issue.fields.comment.comments) {
+        for (const comment of commentsData.comments) {
           const commentText = convertAtlassianDocumentToText(comment.body);
           if (commentText) {
             const formattedComment = `${
