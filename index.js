@@ -344,8 +344,8 @@ function convertAtlassianDocumentToText(document) {
 }
 
 /**
- * Sanitizes a file name by replacing invalid characters with underscores.
- * Replicates CarrierWave's sanitize_regexp behavior to ensure file names are safe for file systems.
+ * #24: Sanitizes a file name by replacing invalid characters with underscores.
+ * Replicates CarrierWave's sanitize_regexp behavior to match name after upload.
  *
  * @param {string} fileName - The file name to sanitize
  * @returns {string} The sanitized file name with invalid characters replaced by underscores
@@ -362,7 +362,7 @@ function sanitizeFileName(fileName) {
     // https://ruby-doc.org/3.4.1/Regexp.html#class-Regexp-label-POSIX+Bracket+Expressions
     // https://unicode.org/reports/tr18/#General_Category_Property
     // https://unicode.org/reports/tr18/#alpha
-    // https://www.unicode.org/reports/tr44/#Join_Control
+    // https://unicode.org/reports/tr44/#Join_Control
     /[^\p{Mark}\p{Decimal_Number}\p{Connector_Punctuation}\p{Alpha}\p{Join_Control}\.\-\+]/giv,
     "_"
   );
