@@ -63,6 +63,7 @@ async function getAllJiraIssues(projectKey, fields = DEFAULT_FIELDS) {
           jql: `project = "${projectKey}" ORDER BY created ASC`,
           maxResults,
           fields: fields.split ? fields.split(",") : fields,
+          expand: "renderedFields",
         };
         if (nextPageToken) body.nextPageToken = nextPageToken;
         const response = await jiraApi.post("/search/jql", body);
@@ -123,6 +124,7 @@ async function getSpecificJiraIssues(
       jql: `key in ("${issueKeys.join('","')}")`,
       maxResults: issueKeys.length,
       fields: fields.split ? fields.split(",") : fields,
+      expand: "renderedFields",
     };
     const response = await jiraApi.post("/search/jql", body);
     return response.data.issues;
