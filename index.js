@@ -234,12 +234,19 @@ async function migrateIssues(
         );
 
         for (const attachment of issue.fields.attachment) {
-          if (existingAttachmentNames.includes(attachment.filename)) {
-            console.log(`Skipping existing attachment: ${attachment.filename}`);
+          const sanitizedFileName = sanitizeFileName(attachment.filename);
+          if (existingAttachmentNames.includes(sanitizedFileName)) {
+            console.log(`Skipping existing attachment: ${sanitizedFileName}`);
             continue;
           }
 
-          console.log(`Processing attachment: ${attachment.filename}`);
+          console.log(
+            `Processing attachment: ${attachment.filename}${
+              attachment.filename !== sanitizedFileName
+                ? ` (sanitized to: ${sanitizedFileName})`
+                : ""
+            }`
+          );
           const tempFilePath = path.join(tempDir, attachment.filename);
           await downloadAttachment(attachment.content, tempFilePath);
           await uploadAttachment(
@@ -334,6 +341,31 @@ function convertAtlassianDocumentToText(document) {
     console.error("Error converting Atlassian document:", error);
     return "";
   }
+}
+
+/**
+ * Sanitizes a file name by replacing invalid characters with underscores.
+ * Replicates CarrierWave's sanitize_regexp behavior to ensure file names are safe for file systems.
+ *
+ * @param {string} fileName - The file name to sanitize
+ * @returns {string} The sanitized file name with invalid characters replaced by underscores
+ * @see {@link https://github.com/carrierwaveuploader/carrierwave/blob/v3.1.2/lib/carrierwave/sanitized_file.rb#L23}
+ *
+ * @example
+ * sanitizeFileName("my file (1).txt") // Returns: "my_file__1_.txt"
+ * sanitizeFileName("document+v2.0.pdf") // Returns: "document+v2.0.pdf"
+ */
+function sanitizeFileName(fileName) {
+  return fileName.replace(
+    // `v` flag for Unicode support, `i` for case-insensitivity, `g` for global replacement
+    // Unfortunately, `\w` behaves differently in JavaScript compared to Ruby, so we explicitly define allowed characters
+    // https://ruby-doc.org/3.4.1/Regexp.html#class-Regexp-label-POSIX+Bracket+Expressions
+    // https://unicode.org/reports/tr18/#General_Category_Property
+    // https://unicode.org/reports/tr18/#alpha
+    // https://www.unicode.org/reports/tr44/#Join_Control
+    /[^\p{Mark}\p{Decimal_Number}\p{Connector_Punctuation}\p{Alpha}\p{Join_Control}\.\-\+]/giv,
+    "_"
+  );
 }
 
 module.exports = {
