@@ -40,8 +40,8 @@ const DEFAULT_FIELDS = [
 async function getAllJiraIssues(projectKey, fields = DEFAULT_FIELDS) {
   try {
     let allIssues = [];
-    let startAt = 0;
     const maxResults = 100;
+    let nextPageToken = undefined;
 
     // Validate project key
     if (!projectKey) {
@@ -55,39 +55,39 @@ async function getAllJiraIssues(projectKey, fields = DEFAULT_FIELDS) {
       );
     }
 
+    let page = 1;
     while (true) {
-      console.log(`Fetching issues ${startAt} to ${startAt + maxResults}...`);
+      console.log(`Fetching issues page ${page}...`);
       try {
-        const response = await jiraApi.get("/search", {
-          params: {
-            jql: `project = "${projectKey}" ORDER BY created ASC`,
-            startAt,
-            maxResults,
-            fields,
-            expand: "renderedFields",
-          },
-        });
+        const body = {
+          jql: `project = "${projectKey}" ORDER BY created ASC`,
+          maxResults,
+          fields: fields.split ? fields.split(",") : fields,
+          expand: "renderedFields",
+        };
+        if (nextPageToken) body.nextPageToken = nextPageToken;
+        const response = await jiraApi.post("/search/jql", body);
+        const { issues, nextPageToken: newToken } = response.data;
 
-        const { issues, total } = response.data;
-
-        if (total === 0) {
-          console.warn(
-            `No issues found in project ${projectKey}. Please check:`
-          );
-          console.warn("1. The project key is correct");
-          console.warn("2. The project contains issues");
-          console.warn("3. You have permission to view issues");
+        if (!issues || issues.length === 0) {
+          if (allIssues.length === 0) {
+            console.warn(
+              `No issues found in project ${projectKey}. Please check:`
+            );
+            console.warn("1. The project key is correct");
+            console.warn("2. The project contains issues");
+            console.warn("3. You have permission to view issues");
+          }
           break;
         }
 
         allIssues = allIssues.concat(issues);
-
-        if (allIssues.length >= total || issues.length === 0) {
+        if (!newToken) {
           console.log(`Retrieved all ${allIssues.length} issues`);
           break;
         }
-
-        startAt += maxResults;
+        nextPageToken = newToken;
+        page++;
       } catch (error) {
         if (error.response?.status === 400) {
           console.error(`\nError fetching issues for project ${projectKey}:`);
@@ -120,14 +120,13 @@ async function getSpecificJiraIssues(
 ) {
   try {
     console.log(`Fetching specific issues: ${issueKeys.join(", ")}...`);
-    const response = await jiraApi.get("/search", {
-      params: {
-        jql: `key in ("${issueKeys.join('","')}")`,
-        maxResults: issueKeys.length,
-        fields,
-        expand: "renderedFields",
-      },
-    });
+    const body = {
+      jql: `key in ("${issueKeys.join('","')}")`,
+      maxResults: issueKeys.length,
+      fields: fields.split ? fields.split(",") : fields,
+      expand: "renderedFields",
+    };
+    const response = await jiraApi.post("/search/jql", body);
     return response.data.issues;
   } catch (error) {
     console.error("Error fetching specific Jira issues:", error.message);
