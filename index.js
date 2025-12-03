@@ -260,8 +260,26 @@ async function migrateIssues(
 
       // Process comments
       // #22: prefer HTML rendered content if available
-      const commentsData =
-        issue.renderedFields?.comment ?? issue.fields.comment;
+      const fieldsCommentsData = issue.fields.comment;
+      const renderedCommentsData = issue.renderedFields?.comment;
+      const commentsData = renderedCommentsData ?? fieldsCommentsData;
+
+      // #26: in case using renderedFields, overwrite dates to maintain original format
+      if (commentsData === renderedCommentsData) {
+        // Optimize lookup by creating a map of comment IDs to original comments
+        const fieldsCommentsById = {};
+        for (const comment of fieldsCommentsData.comments) {
+          fieldsCommentsById[comment.id] = comment;
+        }
+        for (const comment of commentsData.comments) {
+          const originalComment = fieldsCommentsById[comment.id];
+          if (originalComment) {
+            comment.created = originalComment.created;
+            comment.updated = originalComment.updated;
+          }
+        }
+      }
+
       if (commentsData && commentsData.comments.length > 0) {
         const existingComments = await getExistingComments(workPackage.id);
         const existingCommentTexts = existingComments.map((c) => c.comment.raw);
