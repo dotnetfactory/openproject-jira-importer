@@ -29,6 +29,7 @@ const {
   getWorkPackagePriorities,
   addWatcher,
 } = require("./openproject-client");
+const { default: parse } = require("node-html-parser");
 
 // Create temp directory for attachments if it doesn't exist
 const tempDir = path.join(__dirname, "temp");
@@ -165,16 +166,17 @@ async function migrateIssues(
       }
 
       // Create work package payload
+      const rawDescription = Buffer.from(
+        convertAtlassianDocumentToText(
+          // #22: prefer HTML rendered content if available
+          issue.renderedFields?.description ?? issue.fields.description
+        )
+      ).toString("utf8");
       const payload = {
         _type: "WorkPackage",
         subject: issue.fields.summary,
         description: {
-          raw: Buffer.from(
-            convertAtlassianDocumentToText(
-              // #22: prefer HTML rendered content if available
-              issue.renderedFields?.description ?? issue.fields.description
-            )
-          ).toString("utf8"),
+          raw: rawDescription,
         },
         _links: {
           type: {
@@ -214,8 +216,14 @@ async function migrateIssues(
       }
 
       let workPackage;
+      const hasAttachments =
+        issue.fields.attachment && issue.fields.attachment.length > 0;
       if (existingWorkPackage) {
         console.log(`Updating existing work package ${existingWorkPackage.id}`);
+        // In case there are attachments, do not update description yet, as it will be reworked later
+        if (hasAttachments) {
+          delete payload.description;
+        }
         workPackage = await updateWorkPackage(existingWorkPackage.id, payload);
       } else {
         console.log("Creating new work package");
@@ -225,36 +233,63 @@ async function migrateIssues(
       issueToWorkPackageMap.set(issue.key, workPackage.id);
 
       // Process attachments
-      if (issue.fields.attachment && issue.fields.attachment.length > 0) {
+      /** Keep reference of attachments to be able to rework description and comments */
+      let attachmentsByJiraId = {};
+      if (hasAttachments) {
         const existingAttachments = await getExistingAttachments(
           workPackage.id
         );
-        const existingAttachmentNames = existingAttachments.map(
-          (a) => a.fileName
-        );
+        const existingAttachmentsByFileName = {};
+        for (const attachment of existingAttachments) {
+          existingAttachmentsByFileName[attachment.fileName] = attachment;
+        }
 
-        for (const attachment of issue.fields.attachment) {
-          const sanitizedFileName = sanitizeFileName(attachment.filename);
-          if (existingAttachmentNames.includes(sanitizedFileName)) {
+        for (const jiraAttachment of issue.fields.attachment) {
+          const sanitizedFileName = sanitizeFileName(jiraAttachment.filename);
+          let opAttachment;
+          if (existingAttachmentsByFileName[sanitizedFileName]) {
             console.log(`Skipping existing attachment: ${sanitizedFileName}`);
-            continue;
+            opAttachment = existingAttachmentsByFileName[sanitizedFileName];
+          } else {
+            console.log(
+              `Processing attachment: ${jiraAttachment.filename}${
+                jiraAttachment.filename !== sanitizedFileName
+                  ? ` (sanitized to: ${sanitizedFileName})`
+                  : ""
+              }`
+            );
+            const tempFilePath = path.join(tempDir, jiraAttachment.filename);
+            await downloadAttachment(jiraAttachment.content, tempFilePath);
+            opAttachment = await uploadAttachment(
+              workPackage.id,
+              tempFilePath,
+              jiraAttachment.filename
+            );
+            fs.unlinkSync(tempFilePath);
           }
 
+          // #14: keep track of uploaded attachment by Jira ID
+          attachmentsByJiraId[jiraAttachment.id] = {
+            jiraAttachment,
+            opAttachment,
+          };
+        }
+
+        // #14: Update work package description with fixed attachment links
+        const updatedDescription = fixAttachmentsInHTML(
+          rawDescription,
+          attachmentsByJiraId
+        );
+        if (
+          updatedDescription !==
+          (existingWorkPackage?.description?.raw ?? rawDescription)
+        ) {
           console.log(
-            `Processing attachment: ${attachment.filename}${
-              attachment.filename !== sanitizedFileName
-                ? ` (sanitized to: ${sanitizedFileName})`
-                : ""
-            }`
+            "Updating work package description with attachment links"
           );
-          const tempFilePath = path.join(tempDir, attachment.filename);
-          await downloadAttachment(attachment.content, tempFilePath);
-          await uploadAttachment(
-            workPackage.id,
-            tempFilePath,
-            attachment.filename
-          );
-          fs.unlinkSync(tempFilePath);
+          await updateWorkPackage(workPackage.id, {
+            description: { raw: updatedDescription },
+          });
         }
       }
 
@@ -287,11 +322,17 @@ async function migrateIssues(
         for (const comment of commentsData.comments) {
           const commentText = convertAtlassianDocumentToText(comment.body);
           if (commentText) {
-            const formattedComment = `${
+            const preambledComment = `${
               comment.author.displayName
             } wrote on ${new Date(
               comment.created
             ).toLocaleString()}:\n${commentText}`;
+
+            // #14: rework attachment links in comments
+            const formattedComment = fixAttachmentsInHTML(
+              preambledComment,
+              attachmentsByJiraId
+            );
 
             if (existingCommentTexts.includes(formattedComment)) {
               console.log("Skipping existing comment");
@@ -359,6 +400,88 @@ function convertAtlassianDocumentToText(document) {
     console.error("Error converting Atlassian document:", error);
     return "";
   }
+}
+
+/**
+ * #14: Fixes attachment references in HTML content by updating image sources and link hrefs
+ * based on a mapping of Jira attachment IDs. For images, it also sets or overwrites the alt attribute
+ * with the attachment filename and optionally returns a note about the original alt text.
+ *
+ * @param {string} html - The HTML string containing attachment references to be fixed.
+ * @param {Object<string, Object>} attachmentsByJiraId - An object mapping Jira attachment IDs to attachment objects,
+ *   where each attachment object has at least a 'filename' property.
+ * @returns {string} The modified HTML string with updated attachment references.
+ */
+function fixAttachmentsInHTML(html, attachmentsByJiraId) {
+  const root = parse(html);
+  root.querySelectorAll("img").forEach((img) => {
+    reworkElement(
+      img,
+      "src",
+      fixAttachmentsInHTML.regex,
+      attachmentsByJiraId,
+      (img, jiraAttachment) => {
+        const originalAlt = img.getAttribute("alt");
+        // #29: set alt attribute (in case it is missing, but we can always overwrite)
+        img.setAttribute("alt", jiraAttachment.filename);
+        if (originalAlt) return `Original alt: ${originalAlt}\n`;
+      }
+    );
+  });
+  // Also fix links to attachments that are not images
+  root.querySelectorAll("a").forEach((a) => {
+    reworkElement(a, "href", fixAttachmentsInHTML.regex, attachmentsByJiraId);
+  });
+  return root.toString();
+}
+fixAttachmentsInHTML.regex = /\/attachment\/content\/(\d+)$/;
+
+/**
+ * Reworks a DOM element by updating a specified attribute with an OpenProject attachment link
+ * based on a regex match against the attribute's original value. If a match is found and a corresponding
+ * attachment pair exists, the attribute is set to the OpenProject download link, and the element's
+ * title is updated to include original information and optionally custom content from a callback.
+ *
+ * @param {Element} element - The DOM element to modify.
+ * @param {string} attribute - The name of the attribute to update (e.g., 'href' or 'src').
+ * @param {RegExp} regex - The regular expression to match against the attribute's original value,
+ *                         expected to capture the Jira attachment ID in the first group.
+ * @param {Object.<string, {jiraAttachment: Object, opAttachment: Object}>} attachmentsByJiraId -
+ *                        A map of Jira attachment IDs to objects containing Jira and OpenProject attachment details.
+ * @param {Function|null} [buildTitleCb=null] - An optional callback function to build additional title content.
+ *                        It receives the element and jiraAttachment as arguments and should return a string.
+ */
+function reworkElement(
+  element,
+  attribute,
+  regex,
+  attachmentsByJiraId,
+  buildTitleCb = null
+) {
+  const originalValue = element.getAttribute(attribute);
+  const match = originalValue?.match(regex);
+  if (!match) return;
+
+  const jiraAttachmentId = match[1];
+  const attachmentPair = attachmentsByJiraId[jiraAttachmentId];
+  if (!attachmentPair) return;
+
+  const { jiraAttachment, opAttachment } = attachmentPair;
+  // #14: update attribute with OpenProject attachment link
+  element.setAttribute(
+    attribute,
+    opAttachment._links.staticDownloadLocation.href
+  );
+  // Also archive the original value just in case
+  const originalTitle = element.getAttribute("title");
+  element.setAttribute(
+    "title",
+    `${originalTitle ? `Original title: ${originalTitle}\n` : ""}${
+      buildTitleCb?.(element, jiraAttachment) ?? ""
+    }Original file name: ${
+      jiraAttachment.filename
+    }\nOriginal ${attribute}: ${originalValue}`
+  );
 }
 
 /**
