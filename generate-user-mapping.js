@@ -81,6 +81,13 @@ async function generateMapping() {
 
     // Create mapping through interactive prompts
     const mapping = {};
+    const choices = [
+      ...openProjectUsers.map((user) => ({
+        name: `${user.name} (${user.email || "No email"})`,
+        value: user.id,
+      })),
+      { name: "Skip this user", value: null },
+    ];
     for (const jiraUser of jiraUsers) {
       if (!jiraUser.active) continue;
 
@@ -91,13 +98,7 @@ async function generateMapping() {
           message: `Select OpenProject user for Jira user: ${
             jiraUser.displayName
           } (${jiraUser.emailAddress || "No email"})`,
-          choices: [
-            ...openProjectUsers.map((user) => ({
-              name: `${user.name} (${user.email || "No email"})`,
-              value: user.id,
-            })),
-            { name: "Skip this user", value: null },
-          ],
+          choices,
         },
       ]);
 
