@@ -79,10 +79,43 @@ async function generateMapping() {
       console.log(`- ${user.name} (${user.email || "No email"})`);
     });
 
+    // #31: Read existing mapping if available
+    const mappingPath = path.join(__dirname, "user-mapping.js");
+    if (fs.existsSync(mappingPath)) {
+      /** `var` to keep existingMapping in function scope */
+      var existingMapping = require(mappingPath);
+      console.log(
+        "\nExisting user mapping found, pre-filling answers where possible."
+      );
+    } else {
+      console.log("\nNo existing user mapping found.");
+    }
+
     // Create mapping through interactive prompts
     const mapping = {};
+    const openProjectChoices = [
+      // Skip option first, so that it appears at the top and can be selected easily
+      // for the many system users that may not have a corresponding user in OpenProject
+      { name: "Skip this user", value: null },
+      ...openProjectUsers.map((user) => ({
+        name: `${user.name} (${user.email || "No email"})`,
+        value: user.id,
+      })),
+    ];
     for (const jiraUser of jiraUsers) {
       if (!jiraUser.active) continue;
+
+      let choices = openProjectChoices;
+      // #31: Pre-fill existing mapping if available
+      if (existingMapping) {
+        const existingAnswer = openProjectChoices.find(
+          (choice) => choice.value === existingMapping[jiraUser.accountId]
+        );
+        if (existingAnswer) {
+          // Add existing answer first so that it appears selected
+          choices = [existingAnswer, ...openProjectChoices];
+        }
+      }
 
       const answer = await inquirer.prompt([
         {
@@ -91,13 +124,7 @@ async function generateMapping() {
           message: `Select OpenProject user for Jira user: ${
             jiraUser.displayName
           } (${jiraUser.emailAddress || "No email"})`,
-          choices: [
-            ...openProjectUsers.map((user) => ({
-              name: `${user.name} (${user.email || "No email"})`,
-              value: user.id,
-            })),
-            { name: "Skip this user", value: null },
-          ],
+          choices,
         },
       ]);
 
