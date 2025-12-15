@@ -79,9 +79,21 @@ async function generateMapping() {
       console.log(`- ${user.name} (${user.email || "No email"})`);
     });
 
+    // #31: Read existing mapping if available
+    const mappingPath = path.join(__dirname, "user-mapping.js");
+    if (fs.existsSync(mappingPath)) {
+      /** `var` to keep existingMapping in function scope */
+      var existingMapping = require(mappingPath);
+      console.log(
+        "\nExisting user mapping found, pre-filling answers where possible."
+      );
+    } else {
+      console.log("\nNo existing user mapping found.");
+    }
+
     // Create mapping through interactive prompts
     const mapping = {};
-    const choices = [
+    const openProjectChoices = [
       // Skip option first, so that it appears at the top and can be selected easily
       // for the many system users that may not have a corresponding user in OpenProject
       { name: "Skip this user", value: null },
@@ -92,6 +104,18 @@ async function generateMapping() {
     ];
     for (const jiraUser of jiraUsers) {
       if (!jiraUser.active) continue;
+
+      let choices = openProjectChoices;
+      // #31: Pre-fill existing mapping if available
+      if (existingMapping) {
+        const existingAnswer = openProjectChoices.find(
+          (choice) => choice.value === existingMapping[jiraUser.accountId]
+        );
+        if (existingAnswer) {
+          // Add existing answer first so that it appears selected
+          choices = [existingAnswer, ...openProjectChoices];
+        }
+      }
 
       const answer = await inquirer.prompt([
         {
