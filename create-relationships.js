@@ -71,6 +71,10 @@ function getHrefId(href) {
 
 async function checkExistingRelationship(fromId, toId, type) {
   try {
+    // #33: OpenProject does not allow multiple relationships of any type
+    // between the same two work packages, regardless of direction,
+    // so detect them before attempting creation.
+    // https://github.com/opf/openproject/blob/v16.6.3/app/models/work_packages/scopes/relatable.rb#L34-L201
     console.log(
       `\nChecking for existing relationship between ${fromId} and ${toId}`
     );
