@@ -86,48 +86,24 @@ async function checkExistingRelationship(fromId, toId, type) {
       return true;
     }
 
-    // For bidirectional relationships like "relates", we need to check both directions
-    const filters = [];
-
-    // Check forward direction (fromId -> toId)
-    filters.push({
-      from: {
-        operator: "=",
-        values: [fromId.toString()],
+    // #33: strangely, "or" operator in filters does not seem to work as expected,
+    // but we can simply list both work package IDs in both "to" and "from" filters
+    // (this could also match relations from A to A or from B to B, but those are not possible in our case)
+    const filter = {
+      operator: "=",
+      values: [fromId.toString(), toId.toString()],
+    };
+    const filters = [
+      {
+        from: filter,
+        to: filter,
       },
-      to: {
-        operator: "=",
-        values: [toId.toString()],
-      },
-      type: {
-        operator: "=",
-        values: [type],
-      },
-    });
-
-    // For "relates" type, also check reverse direction (toId -> fromId)
-    if (type === "relates") {
-      filters.push({
-        from: {
-          operator: "=",
-          values: [toId.toString()],
-        },
-        to: {
-          operator: "=",
-          values: [fromId.toString()],
-        },
-        type: {
-          operator: "=",
-          values: [type],
-        },
-      });
-    }
+    ];
 
     // Use the relations endpoint with filters
     const response = await openProjectApi.get("/relations", {
       params: {
         filters: JSON.stringify(filters),
-        operator: "or",
       },
     });
 
