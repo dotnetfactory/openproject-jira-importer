@@ -20,54 +20,66 @@ const issueToWorkPackageMap = new Map();
 // Track missing relationships to retry later
 const missingRelationships = new Set();
 
-async function checkParentRelationship(fromId, toId, type) {
+/**
+ * Check if a parent relationship already exists between two work packages
+ * (whatever the direction is).
+ * Unfortunately, OpenProject does not expose parent relationships via the /relations endpoint,
+ * so we need to fetch the work package details to check for parent links.
+ * https://www.openproject.org/docs/api/endpoints/work-packages/#view-work-package
+ *
+ * @param {string} fromId of Work Package to check relation for
+ * @param {string} toId of Work Package to check relation for
+ * @returns
+ */
+async function checkParentRelationship(fromId, toId) {
   try {
-    // For "partof", check if toId is parent of fromId
-    // For "includes", check if fromId is parent of toId
-    const workPackageToCheck = type === "partof" ? fromId : toId;
-    const expectedParentId = type === "partof" ? toId : fromId;
-
-    const response = await openProjectApi.get(
-      `/work_packages/${workPackageToCheck}`
-    );
+    // We do not care about direction here, just if a parent-child relationship exists,
+    // so we pick one Work Package to fetch and check if the other one is its parent
+    // or one of its children.
+    const response = await openProjectApi.get(`/work_packages/${fromId}`);
     const parentLink = response.data._links.parent;
+    const childrenLinks = response.data._links.children;
+    const toIdStr = toId.toString();
 
-    if (parentLink && parentLink.href) {
-      const parentId = parentLink.href.split("/").pop();
-      const hasParent = parentId === expectedParentId.toString();
-      if (hasParent) {
-        console.log(
-          `Found existing parent relationship between ${fromId} and ${toId}`
-        );
-      }
-      return hasParent;
+    if (
+      // Check if fromId has toId as parent...
+      getHrefId(parentLink?.href) === toIdStr ||
+      // ...or if fromId has toId as child
+      childrenLinks?.find((child) => getHrefId(child?.href) === toIdStr)
+    ) {
+      console.log(
+        `Found existing parent relationship between ${fromId} and ${toId}`
+      );
+      return true;
     }
-    return false;
   } catch (error) {
     console.error(`Error checking parent relationship: ${error.message}`);
-    return false;
   }
+  return false;
+}
+
+/**
+ * Extracts the ID from a given href by splitting on "/" and returning the last segment.
+ * @example
+ * getHrefId("/api/v3/work_packages/123") // returns "123"
+ * @param {string | undefined} href - The href string to extract the ID from.
+ * @returns {string | undefined} The extracted ID.
+ */
+function getHrefId(href) {
+  return href?.split("/").pop();
 }
 
 async function checkExistingRelationship(fromId, toId, type) {
   try {
     console.log(
-      `\nChecking for existing relationship: ${fromId} ${type} ${toId}`
+      `\nChecking for existing relationship between ${fromId} and ${toId}`
     );
-
-    // Check for parent relationship first if type is partof or includes
-    if (type === "partof" || type === "includes") {
-      const hasParentRelation = await checkParentRelationship(
-        fromId,
-        toId,
-        type
+    // #33: parent-child prevents any other relationships, whatever their type and direction are.
+    if (await checkParentRelationship(fromId, toId)) {
+      console.log(
+        `Found existing parent relationship, skipping ${type} creation`
       );
-      if (hasParentRelation) {
-        console.log(
-          `Found existing parent relationship, skipping ${type} creation`
-        );
-        return true;
-      }
+      return true;
     }
 
     // For bidirectional relationships like "relates", we need to check both directions
