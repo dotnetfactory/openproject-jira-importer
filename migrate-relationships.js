@@ -75,6 +75,9 @@ if (!jiraProjectKey || !openProjectId) {
   console.log(
     "Example with specific issues: node migrate-relationships.js CLD 9 CLD-123,CLD-124"
   );
+  console.log(
+    "Note: Use 'all' as OPENPROJECT_ID to include all projects (useful for cross-project links)"
+  );
   process.exit(1);
 }
 
