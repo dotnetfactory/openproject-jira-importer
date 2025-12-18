@@ -94,8 +94,14 @@ async function checkExistingRelationship(fromId, toId, type) {
       values: [fromId.toString(), toId.toString()],
     };
     const filters = [
+      // #36: Check both directions as 2 separate filters
+      // (OpenProject combines them with AND logic),
+      // OpenProject expects objects with a single property
+      // https://github.com/opf/openproject/blob/v16.6.3/app/services/api/v3/parse_query_params_service.rb#L138
       {
         from: filter,
+      },
+      {
         to: filter,
       },
     ];
