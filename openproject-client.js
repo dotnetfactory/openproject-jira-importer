@@ -54,6 +54,19 @@ const priorityMapping = {
   Lowest: "Low",
 };
 
+/**
+ * Fetches and caches OpenProject work packages, optionally filtered by project ID(s).
+ * This function retrieves work packages from the OpenProject API in paginated requests,
+ * maps them by their associated Jira ID (from a custom field), and returns a Map for quick lookup.
+ * It logs progress, including total counts and cache summaries.
+ *
+ * @async
+ * @param {string|number} projectId - The project ID(s) to filter by. Use "\*" or "all" for all projects,
+ *                                    a single ID, or comma-separated IDs. If falsy or "\*" or "all", no project filter is applied.
+ * @returns {Promise<Map<string, Object>>} A Map where keys are Jira IDs (strings) and values are work package objects.
+ *                                         Only work packages with a Jira ID are included in the Map.
+ * @throws {Error} If the API request fails, the error is logged and re-thrown.
+ */
 async function getOpenProjectWorkPackages(projectId) {
   console.log("\n=== Caching OpenProject Work Packages ===");
   console.log("Fetching work packages from OpenProject...");
@@ -63,6 +76,20 @@ async function getOpenProjectWorkPackages(projectId) {
   const pageSize = 100;
   let total = null;
   const workPackageMap = new Map();
+  projectId = projectId?.toString().trim();
+
+  // #35: prepare potential filtering by one, several or all projects in OpenProject
+  const opProjectFilter =
+    !projectId || ["*", "all"].includes(projectId.toLowerCase())
+      ? [] // Pass an empty array for no filtering, otherwise OpenProject applies a default filter (status_id open https://www.openproject.org/docs/api/endpoints/work-packages/#list-work-packages)
+      : [
+          {
+            project: {
+              operator: "=",
+              values: projectId.split(","),
+            },
+          },
+        ];
 
   while (true) {
     console.log(`Fetching page ${page}...`);
@@ -70,14 +97,7 @@ async function getOpenProjectWorkPackages(projectId) {
     try {
       const response = await openProjectApi.get("/work_packages", {
         params: {
-          filters: JSON.stringify([
-            {
-              project: {
-                operator: "=",
-                values: [projectId.toString()],
-              },
-            },
-          ]),
+          filters: JSON.stringify(opProjectFilter),
           offset: page,
           pageSize: pageSize,
           sortBy: JSON.stringify([["id", "asc"]]),
