@@ -55,7 +55,7 @@ async function migrateParents(jiraProjectKey, openProjectId, specificIssues) {
   for (const issue of jiraIssues) {
     try {
       console.log(`\nProcessing ${issue.key}...`);
-
+      console.log(`\nProcessing Content ${issue}...`);
       // Check for parent field
       const parentKey = issue.fields.parent?.key;
       if (!parentKey) {

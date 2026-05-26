@@ -6,6 +6,11 @@ const {
   listProjects: listOpenProjectProjects,
 } = require("./openproject-client");
 
+// Force console.log to also write to stderr
+console.log = (...args) => {
+  process.stderr.write(args.join(" ") + "\n");
+};
+
 async function promptForMigrationOptions() {
   try {
     // Get list of Jira projects

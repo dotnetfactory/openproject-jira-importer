@@ -34,6 +34,7 @@ const typeMapping = {
   Epic: "Epic",
   Feature: "Feature",
   Milestone: "Milestone",
+  Risk: "Risk"
 };
 
 // Map Jira statuses to OpenProject statuses
@@ -54,19 +55,6 @@ const priorityMapping = {
   Lowest: "Low",
 };
 
-/**
- * Fetches and caches OpenProject work packages, optionally filtered by project ID(s).
- * This function retrieves work packages from the OpenProject API in paginated requests,
- * maps them by their associated Jira ID (from a custom field), and returns a Map for quick lookup.
- * It logs progress, including total counts and cache summaries.
- *
- * @async
- * @param {string|number} projectId - The project ID(s) to filter by. Use "\*" or "all" for all projects,
- *                                    a single ID, or comma-separated IDs. If falsy or "\*" or "all", no project filter is applied.
- * @returns {Promise<Map<string, Object>>} A Map where keys are Jira IDs (strings) and values are work package objects.
- *                                         Only work packages with a Jira ID are included in the Map.
- * @throws {Error} If the API request fails, the error is logged and re-thrown.
- */
 async function getOpenProjectWorkPackages(projectId) {
   console.log("\n=== Caching OpenProject Work Packages ===");
   console.log("Fetching work packages from OpenProject...");
@@ -76,20 +64,6 @@ async function getOpenProjectWorkPackages(projectId) {
   const pageSize = 100;
   let total = null;
   const workPackageMap = new Map();
-  projectId = projectId?.toString().trim();
-
-  // #35: prepare potential filtering by one, several or all projects in OpenProject
-  const opProjectFilter =
-    !projectId || ["*", "all"].includes(projectId.toLowerCase())
-      ? [] // Pass an empty array for no filtering, otherwise OpenProject applies a default filter (status_id open https://www.openproject.org/docs/api/endpoints/work-packages/#list-work-packages)
-      : [
-          {
-            project: {
-              operator: "=",
-              values: projectId.split(","),
-            },
-          },
-        ];
 
   while (true) {
     console.log(`Fetching page ${page}...`);
@@ -97,7 +71,14 @@ async function getOpenProjectWorkPackages(projectId) {
     try {
       const response = await openProjectApi.get("/work_packages", {
         params: {
-          filters: JSON.stringify(opProjectFilter),
+          filters: JSON.stringify([
+            {
+              project: {
+                operator: "=",
+                values: [projectId.toString()],
+              },
+            },
+          ]),
           offset: page,
           pageSize: pageSize,
           sortBy: JSON.stringify([["id", "asc"]]),
@@ -341,9 +322,12 @@ async function listProjects() {
   }
 }
 
-async function getWorkPackageTypes() {
+async function getWorkPackageTypes(projectId) {
   try {
-    const response = await openProjectApi.get("/types");
+    const endpoint = projectId
+      ? `/projects/${projectId}/types`
+      : "/types";
+    const response = await openProjectApi.get(endpoint);
     workPackageTypes = response.data._embedded.elements;
     console.log("\nAvailable work package types:");
     workPackageTypes.forEach((type) => {
@@ -388,7 +372,7 @@ async function getWorkPackagePriorities() {
 
 function getWorkPackageTypeId(jiraIssueType) {
   console.log(`Mapping Jira type: ${jiraIssueType}`);
-  const mappedType = typeMapping[jiraIssueType] || "Task"; // Default to Task if no mapping found
+  const mappedType = typeMapping[jiraIssueType] || "Task"; // Default to Task if no mapping found 
   const typeObj = workPackageTypes.find(
     (t) => t.name.toLowerCase() === mappedType.toLowerCase()
   );
@@ -521,6 +505,58 @@ function getWorkPackageStatusName(statusId) {
   return status ? status.name : "Unknown";
 }
 
+async function getCustomFieldOptionsMap(customFieldIds, projectId, typeId) {
+  const optionsMap = {};
+  if (customFieldIds.length === 0) return optionsMap;
+
+  try {
+    const response = await openProjectApi.post("/work_packages/form", {
+      _links: {
+        project: { href: `/api/v3/projects/${projectId}` },
+        type: { href: `/api/v3/types/${typeId}` },
+      },
+    });
+    const schema = response.data._embedded?.schema;
+    if (!schema) {
+      console.warn("Could not retrieve work package form schema");
+      return optionsMap;
+    }
+
+    for (const fieldId of customFieldIds) {
+      const key = `customField${fieldId}`;
+      const fieldSchema = schema[key];
+      if (!fieldSchema) {
+        console.warn(`  Custom field ${fieldId}: not found in work package schema`);
+        continue;
+      }
+
+      const allowedValues = fieldSchema._links?.allowedValues;
+      if (allowedValues && allowedValues.length > 0) {
+        const valueToHref = {};
+        for (const av of allowedValues) {
+          const value = av.title;
+          if (value) {
+            valueToHref[value] = av.href;
+          }
+        }
+        optionsMap[fieldId] = valueToHref;
+        console.log(
+          `  Custom field ${fieldId}: found ${Object.keys(valueToHref).length} option(s)`
+        );
+      } else {
+        console.warn(
+          `  Custom field ${fieldId}: no allowedValues in schema`
+        );
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `Could not fetch custom field options via form: ${error.message}`
+    );
+  }
+  return optionsMap;
+}
+
 module.exports = {
   getOpenProjectWorkPackages,
   setParentWorkPackage,
@@ -546,4 +582,5 @@ module.exports = {
   statusMapping,
   priorityMapping,
   JIRA_ID_CUSTOM_FIELD,
+  getCustomFieldOptionsMap,
 };
