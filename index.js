@@ -5,6 +5,7 @@ const inquirer = require("inquirer");
 const {
   getAllJiraIssues,
   getSpecificJiraIssues,
+  getJiraCustomFields,
   downloadAttachment,
   listProjects,
   getIssueWatchers,
@@ -92,7 +93,13 @@ async function migrateIssues(
   // Generate or load user mapping
   console.log("\nChecking user mapping...");
   try {
-    userMapping = require("./user-mapping");
+    // Try generated mapping first, fall back to the example template
+    const mappingPath = fs.existsSync(
+      path.join(__dirname, "user-mapping.generated.js")
+    )
+      ? "./user-mapping.generated"
+      : "./user-mapping";
+    userMapping = require(mappingPath);
     const shouldUpdate = await inquirer.prompt([
       {
         type: "confirm",
@@ -112,6 +119,9 @@ async function migrateIssues(
   // List available projects
   await listProjects();
 
+  // Resolve Jira field names to IDs for name-based custom field mapping
+  const jiraFieldNameToId = await resolveJiraFieldNames(customFieldMapping);
+
   // Get work package types and statuses
   await getWorkPackageTypes(openProjectId);
   await getWorkPackageStatuses();
@@ -125,14 +135,13 @@ async function migrateIssues(
     .map((m) => m.openProjectField);
   if (listFieldIds.length > 0) {
     console.log("Fetching custom field options from OpenProject...");
-    // Use the first Jira issue type's mapped OpenProject type for the form
-    const firstMappedType = customFieldMapping.length > 0
-      ? getWorkPackageTypeId("Risk")
+    const firstTypeId = workPackageTypes && workPackageTypes.length > 0
+      ? workPackageTypes[0].id
       : null;
     cfOptionsMap = await getCustomFieldOptionsMap(
       listFieldIds,
       openProjectId,
-      firstMappedType
+      firstTypeId
     );
     console.log(
       `Fetched options for ${Object.keys(cfOptionsMap).length} custom field(s)`
@@ -373,6 +382,37 @@ async function migrateIssues(
   console.log(`Errors: ${errors}`);
 
   return issueToWorkPackageMap;
+}
+
+// Resolve any human-readable Jira field names (e.g. "My Custom Field") in the
+// mapping to their internal customfield_XXXXX IDs.  Entries that already
+// use customfield_ IDs are left untouched.
+async function resolveJiraFieldNames(mappings) {
+  const needsResolving = mappings.filter(
+    (m) => m.jiraField && !m.jiraField.startsWith("customfield_")
+  );
+  if (needsResolving.length === 0) return {};
+
+  console.log("Resolving Jira field names to IDs...");
+  const jiraFields = await getJiraCustomFields();
+  const nameToId = {};
+
+  for (const field of jiraFields) {
+    nameToId[field.name] = field.id;
+  }
+
+  for (const m of needsResolving) {
+    const id = nameToId[m.jiraField];
+    if (id) {
+      console.log(`  ${m.jiraField} → ${id}`);
+      m.jiraField = id;
+    } else {
+      console.warn(
+        `  WARNING: Jira field "${m.jiraField}" not found. It will be skipped.`
+      );
+    }
+  }
+  return nameToId;
 }
 
 // Build the Jira fields list by extending DEFAULT_FIELDS with custom field IDs

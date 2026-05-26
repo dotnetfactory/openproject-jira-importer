@@ -38,18 +38,9 @@ const DEFAULT_FIELDS = [
   "assignee",
   "creator",
   "created",
-  "customfield_10014", // Epic Link field
+  "customfield_10014",
   "parent",
-  "watches"/*,
-  "Residual Risk Accepted (Risk<=>Benefit) (migrated)",
-  "Risk Area (migrated)",
-  "Risk Control Measure (migrated)",
-  "Risk Impact 1 (migrated)",
-  "Risk Impact 2 (migrated)",
-  "Risk Level (migrated)",
-  "Risk Likelihood 1 (migrated)",
-  "Risk Likelihood 2 (migrated)",
-  "Risk Reviewed (migrated)"*/
+  "watches",
 ];
 
 async function getAllJiraIssues(projectKey, fields = DEFAULT_FIELDS.join(",")) {
@@ -237,6 +228,21 @@ async function listProjects() {
   }
 }
 
+let jiraFieldsCache = null;
+
+async function getJiraCustomFields() {
+  if (jiraFieldsCache) return jiraFieldsCache;
+  try {
+    const response = await jiraApi.get("/field");
+    const fields = response.data;
+    jiraFieldsCache = fields.filter((f) => f.custom);
+    return jiraFieldsCache;
+  } catch (error) {
+    console.error("Error fetching Jira fields:", error.message);
+    return [];
+  }
+}
+
 async function getIssueWatchers(issueKey) {
   try {
     console.log(`Fetching watchers for Jira issue ${issueKey}...`);
@@ -273,5 +279,6 @@ module.exports = {
   downloadAttachment,
   listProjects,
   getIssueWatchers,
+  getJiraCustomFields,
   DEFAULT_FIELDS,
 };

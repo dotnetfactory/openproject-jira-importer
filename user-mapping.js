@@ -1,10 +1,29 @@
-// Generated user mapping - 2025-09-19T13:33:13.850Z
-const userMapping = {
-  "63ce500e69f341de3f3c06a4": 5,
-  "557058:4946a569-8ede-4d6e-851d-6d17fa1aa1b5": 8,
-  "557058:e9cb1eda-6de8-4eb1-a8c5-ada6844f0736": 5,
-  "63cfd1e695cff7f585c2ff6d": 7,
-  "712020:e3cb74ad-614a-4b8b-9b7e-78280a627818": 6
-};
+/*
+ * User Mapping Configuration
+ * ===========================
+ *
+ * Maps Jira user account IDs to OpenProject user IDs.
+ *
+ * --- How to generate ---
+ *
+ * Run `node generate-user-mapping.js` for an interactive prompt that lets
+ * you map Jira users to OpenProject users. The result is saved to
+ * `user-mapping.generated.js` and loaded automatically.
+ *
+ * --- Manual format ---
+ *
+ * {
+ *   "jira-account-id-1": 5,    // Jira account ID → OpenProject user ID
+ *   "jira-account-id-2": 8,
+ * }
+ *
+ * --- How to find IDs ---
+ *
+ * Jira account IDs:  Run `node generate-user-mapping.js` or use
+ *                    the Jira API `GET /users/search`.
+ *
+ * OpenProject IDs:   Run `node generate-user-mapping.js` or use
+ *                    the OpenProject API `GET /api/v3/users`.
+ */
 
-module.exports = userMapping;
+module.exports = {};

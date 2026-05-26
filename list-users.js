@@ -3,7 +3,7 @@ const axios = require("axios");
 
 // Jira API configuration
 const jiraConfig = {
-  baseURL: `https://${process.env.JIRA_HOST}/rest/api/3`,
+  baseURL: `https://${process.env.JIRA_HOST}/rest/api/2`,
   auth: {
     username: process.env.JIRA_EMAIL,
     password: process.env.JIRA_API_TOKEN,

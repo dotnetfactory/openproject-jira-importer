@@ -17,3 +17,7 @@ temp/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Generated config files
+user-mapping.generated.js
+custom-field-mapping.local.js

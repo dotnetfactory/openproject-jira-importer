@@ -34,7 +34,6 @@ const typeMapping = {
   Epic: "Epic",
   Feature: "Feature",
   Milestone: "Milestone",
-  Risk: "Risk"
 };
 
 // Map Jira statuses to OpenProject statuses

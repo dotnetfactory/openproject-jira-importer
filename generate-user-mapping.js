@@ -6,7 +6,7 @@ const inquirer = require("inquirer");
 
 // Jira API configuration
 const jiraConfig = {
-  baseURL: `https://${process.env.JIRA_HOST}/rest/api/3`,
+  baseURL: `https://${process.env.JIRA_HOST}/rest/api/2`,
   auth: {
     username: process.env.JIRA_EMAIL,
     password: process.env.JIRA_API_TOKEN,
@@ -80,7 +80,7 @@ async function generateMapping() {
     });
 
     // #31: Read existing mapping if available
-    const mappingPath = path.join(__dirname, "user-mapping.js");
+    const mappingPath = path.join(__dirname, "user-mapping.generated.js");
     if (fs.existsSync(mappingPath)) {
       /** `var` to keep existingMapping in function scope */
       var existingMapping = require(mappingPath);
@@ -140,8 +140,8 @@ const userMapping = ${JSON.stringify(mapping, null, 2)};
 module.exports = userMapping;
 `;
 
-    fs.writeFileSync(path.join(__dirname, "user-mapping.js"), mappingContent);
-    console.log("\nUser mapping has been saved to user-mapping.js");
+    fs.writeFileSync(path.join(__dirname, "user-mapping.generated.js"), mappingContent);
+    console.log("\nUser mapping has been saved to user-mapping.generated.js");
 
     return mapping;
   } catch (error) {
