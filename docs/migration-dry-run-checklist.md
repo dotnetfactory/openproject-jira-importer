@@ -41,6 +41,6 @@ Use this checklist before running a production Jira to OpenProject migration.
 
 If you want a manual review of your dry-run plan, use the `$12` checkout link:
 
-https://buy.stripe.com/8x2aEZ9VL6918Cq0Fg8so08
+https://buy.stripe.com/14AeVc4fh04ogx5dvXaMU07
 
 Include only sanitized context such as repo links, staging project notes, redacted command output, field names, and the main blocker. Do not send API tokens, credentials, private issue descriptions, attachments, customer exports, `.env` files, or production database files.

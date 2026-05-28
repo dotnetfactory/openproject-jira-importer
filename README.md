@@ -130,7 +130,7 @@ Before running a production migration, use the free [migration dry-run checklist
 
 If you want a second pass on your plan, you can buy a `$12` manual dry-run review:
 
-[Buy the dry-run review](https://buy.stripe.com/8x2aEZ9VL6918Cq0Fg8so08)
+[Buy the dry-run review](https://buy.stripe.com/14AeVc4fh04ogx5dvXaMU07)
 
 The review covers sanitized migration plans, configuration alignment, custom-field readiness, and likely dry-run risks. Do not send Jira API tokens, OpenProject API keys, credentials, exported customer data, attachments, private issue descriptions, or production database files.
 
