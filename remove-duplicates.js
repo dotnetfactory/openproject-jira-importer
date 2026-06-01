@@ -1,19 +1,5 @@
-require("dotenv").config();
-const axios = require("axios");
 const { JIRA_ID_CUSTOM_FIELD } = require("./openproject-client");
-
-// OpenProject API configuration
-const openProjectConfig = {
-  baseURL: `${process.env.OPENPROJECT_HOST}/api/v3`,
-  headers: {
-    Authorization: `Basic ${Buffer.from(
-      `apikey:${process.env.OPENPROJECT_API_KEY}`
-    ).toString("base64")}`,
-    "Content-Type": "application/json",
-  },
-};
-
-const openProjectApi = axios.create(openProjectConfig);
+const { openProjectApi } = require("./apis.js");
 
 async function getAllWorkPackages(projectId) {
   try {

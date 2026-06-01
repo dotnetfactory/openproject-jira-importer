@@ -1,21 +1,7 @@
 require("dotenv").config();
-const axios = require("axios");
 const fs = require("fs");
-const path = require("path");
 const FormData = require("form-data");
-
-// OpenProject API configuration
-const openProjectConfig = {
-  baseURL: `${process.env.OPENPROJECT_HOST}/api/v3`,
-  headers: {
-    Authorization: `Basic ${Buffer.from(
-      `apikey:${process.env.OPENPROJECT_API_KEY}`
-    ).toString("base64")}`,
-    "Content-Type": "application/json",
-  },
-};
-
-const openProjectApi = axios.create(openProjectConfig);
+const { openProjectApi } = require("./apis.js");
 
 // Get the custom field ID from environment variable
 // Required: the OpenProject custom field ID that stores the Jira issue key.
@@ -50,7 +36,7 @@ const typeMapping = {
   Epic: "Epic",
   Feature: "Feature",
   Milestone: "Milestone",
-};
+};    
 
 // Map Jira statuses to OpenProject statuses
 const statusMapping = {
@@ -192,34 +178,154 @@ async function setParentWorkPackage(childId, parentId) {
   }
 }
 
-async function createWorkPackage(projectId, payload) {
+/**
+ * Create an OpenProject user with name and email based on the given Jira user
+ * @param {object} jiraUser The Jira user from the Jira API
+ * @returns The response of the OpenProject API
+ */
+async function createOpenProjectUser(jiraUser) {
+  const nameParts = (jiraUser.displayName || "").trim().split(/\s+/).filter(Boolean);
+  const firstName = nameParts.shift() || jiraUser.emailAddress;
+  const lastName = nameParts.join(" ") || "-";
+
+  const response = await openProjectApi.post("/users", {
+    login: jiraUser.emailAddress,
+    firstName,
+    lastName,
+    email: jiraUser.emailAddress,
+    status: "invited",
+  });
+  return response.data;
+}
+
+async function createWorkPackage(projectId, payload, missingMembers = { add: false }) {
+  const newPayload = { ...payload };
+  newPayload._links.project = { href: `/api/v3/projects/${projectId}` };
+
   try {
-    const response = await openProjectApi.post("/work_packages", {
-      ...payload,
-      _links: {
-        ...payload._links,
-        project: {
-          href: `/api/v3/projects/${projectId}`,
-        },
-      },
-    });
+    const response = await openProjectApi.post("/work_packages", newPayload);
     return response.data;
   } catch (error) {
     console.error("Error creating work package:", error.message);
+    if (error?.response?.data && missingMembers.add) {
+      if (await addMissingMembers(error.response.data, newPayload, missingMembers.role, newPayload._links.project.href)) {
+        console.log("retrying...");
+        return (await openProjectApi.post("/work_packages", newPayload)).data;
+      } else {
+        throw error;
+      }
+    } else {
+      throw error;
+    }
+  }
+}
+
+/**
+ * Reads the problem Details of an OpenProject Response. If the Cause of the Problem is "user is not a member of this project", it returns a list of _link-Properties that contain the offending user.
+ * @param {object} errorDetails The error details from the OpenProject-API
+ * @returns {string[]} The offending properties in the `_links` object.
+ */
+function getMissingMembers(errorDetails) {
+  const missingMembers = [];
+  if (isMemberError(errorDetails)) {
+    missingMembers.push(errorDetails._embedded.details.attribute);
+  } else if (
+    errorDetails.errorIdentifier ===
+    "urn:openproject-org:api:v3:errors:MultipleErrors"
+  ) {
+    errorDetails._embedded.errors
+      .filter((embeddedError) => isMemberError(embeddedError))
+      .forEach((missingMember) => {
+        missingMembers.push(missingMember._embedded.details.attribute);
+      });
+  }
+
+  return missingMembers;
+}
+
+/**
+ * Reads the problem details of an OpenProject response and determines if the cause of the problem is, that a user is not Member of a project.
+ * @param {object} errorDetails 
+ * @returns {boolean} Whether the error was caused by non-membership of a project or not.
+ */
+function isMemberError(errorDetails) {
+  const attribute = errorDetails?._embedded?.details?.attribute;
+
+  return (
+    errorDetails?.errorIdentifier ===
+      "urn:openproject-org:api:v3:errors:PropertyConstraintViolation" &&
+    ["assignee", "responsible", "user"].includes(attribute)
+  );
+}
+
+/**
+ * Adds the Principal to the Project with the given Role
+ * @param {string} project The href to the Project
+ * @param {string} principal The href to the User
+ * @param {string} role The href to the Role
+ */
+async function addMember(project, principal, role) {
+  console.log(
+    "Adding " + principal + " to project " + project + " with role " + role,
+  );
+
+  try {
+    await openProjectApi.post("/memberships", {
+      _links: {
+        principal: { href: principal },
+        roles: [{ href: role }],
+        project: { href: project },
+      },
+    });
+  } catch (error) {
+    console.error("Could not add user: " + error.message);
     throw error;
   }
 }
 
-async function updateWorkPackage(workPackageId, payload) {
+/**
+ * Determines if the error was caused by non-membership and adds the missing members, if required.
+ * @param {object} errorDetails The error details from OpenProject
+ * @param {object} payload The Payload that should have been sent. Will not be modified.
+ * @param {string} role The href to the role with which to add new members
+ * @param {string} project The href to the project to which missing members shall be added.
+ * @returns {boolean} Whether new members have been added or not.
+ */
+async function addMissingMembers(errorDetails, payload, role, project) {
+  const missingMembers = getMissingMembers(errorDetails);
+  if (missingMembers.length != 0) {
+    console.log("Operation failed because Users were not members of project. Adding...");
+    const addedHrefs = [];
+    for (const member of missingMembers) {
+      const memberHref = payload._links[member].href;
+      if (addedHrefs.includes(memberHref)) {
+        continue;
+      }
+
+      await addMember(
+        project,
+        memberHref,
+        role,
+      );
+      addedHrefs.push(memberHref);
+    }
+    return true;
+  }
+  return false;
+}
+
+async function updateWorkPackage(workPackageId, payload, missingMembers = { add: false }) {
+  // Remove _type from update payload 
+  const { _type, ...updatePayload } = payload;
+  let project = null;
+
   try {
-    // Get current work package to get its lock version
+    // Get current work package to get its lock version and add it to the update payload
     const currentWP = await openProjectApi.get(
       `/work_packages/${workPackageId}`
     );
-
-    // Remove _type from update payload and add lock version
-    const { _type, ...updatePayload } = payload;
     updatePayload.lockVersion = currentWP.data.lockVersion;
+    project = currentWP.data._links.project.href;
 
     const response = await openProjectApi.patch(
       `/work_packages/${workPackageId}`,
@@ -232,12 +338,27 @@ async function updateWorkPackage(workPackageId, payload) {
       error.message
     );
     if (error.response?.data) {
-      console.error(
-        "Error details:",
-        JSON.stringify(error.response.data, null, 2)
-      );
+      if (missingMembers.add && project !== null) {
+        if (await addMissingMembers(error.response.data, updatePayload, missingMembers.role, project)) {
+          console.log("Retrying...");
+          return (await openProjectApi.patch(`/work_packages/${workPackageId}`, updatePayload)).data;
+        } else {
+          console.error(
+            "Error details:",
+            JSON.stringify(error.response.data, null, 2)
+          );
+          throw error;
+        }
+      } else {
+        console.error(
+          "Error details:",
+          JSON.stringify(error.response.data, null, 2)
+        );
+        throw error;
+      }
+    } else {
+      throw error;
     }
-    throw error;
   }
 }
 
@@ -265,13 +386,7 @@ async function uploadAttachment(workPackageId, filePath, fileName, mimeType) {
 
     const response = await openProjectApi.post(
       `/work_packages/${workPackageId}/attachments`,
-      formData,
-      {
-        headers: {
-          ...openProjectConfig.headers,
-          "Content-Type": "multipart/form-data",
-        },
-      }
+      formData
     );
     return response.data;
   } catch (error) {
@@ -283,7 +398,7 @@ async function uploadAttachment(workPackageId, filePath, fileName, mimeType) {
   }
 }
 
-async function addWatcher(workPackageId, userId) {
+async function addWatcher(workPackageId, userId, missingMembers = { add: false }, projectId = null) {
   try {
     console.log(
       `Adding watcher (userId: ${userId}) to work package ${workPackageId}...`
@@ -306,10 +421,19 @@ async function addWatcher(workPackageId, userId) {
         error.message
       );
       if (error.response?.data) {
-        console.error(
-          "Error details:",
-          JSON.stringify(error.response.data, null, 2)
-        );
+        if (missingMembers.add && isMemberError(error.response.data)) {
+          console.log("Creation failed because watcher is no member. Adding to project...");
+          await addMember(`/api/v3/projects/${projectId}`, `/api/v3/users/${userId}`, missingMembers.role);
+          console.log("retrying...");
+          await openProjectApi.post(`/work_packages/${workPackageId}/watchers`, {
+            user: { href: `/api/v3/users/${userId}` },
+          });
+        } else {
+          console.error(
+            "Error details:",
+            JSON.stringify(error.response.data, null, 2),
+          );
+        }
       }
       if (error.response?.status === 404) {
         console.error(
@@ -334,6 +458,16 @@ async function listProjects() {
     return response.data._embedded.elements;
   } catch (error) {
     console.error("Error listing projects:", error.message);
+    throw error;
+  }
+}
+
+async function getRoleList() {
+  try {
+    const response = await openProjectApi.get("/roles");
+    return response.data._embedded.elements;
+  } catch (error) {
+    console.error("Error getting Roles:", error.message);
     throw error;
   }
 }
@@ -579,12 +713,14 @@ async function getCustomFieldOptionsMap(customFieldIds, projectId, typeId) {
 module.exports = {
   getOpenProjectWorkPackages,
   setParentWorkPackage,
+  createOpenProjectUser,
   createWorkPackage,
   updateWorkPackage,
   addComment,
   uploadAttachment,
   addWatcher,
   listProjects,
+  getRoleList,
   getWorkPackageTypes,
   getWorkPackageStatuses,
   getWorkPackagePriorities,

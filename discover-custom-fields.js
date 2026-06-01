@@ -1,5 +1,4 @@
-require("dotenv").config();
-const axios = require("axios");
+const { jiraApi, openProjectApi } = require("./apis.js");
 
 /*
  * Discover custom fields from both Jira and OpenProject.
@@ -10,24 +9,6 @@ const axios = require("axios");
  * Outputs each system's custom fields with their IDs and option values
  * so you can build your custom-field-mapping.js configuration.
  */
-
-const jiraApi = axios.create({
-  baseURL: `https://${process.env.JIRA_HOST}/rest/api/2`,
-  auth: {
-    username: process.env.JIRA_EMAIL,
-    password: process.env.JIRA_API_TOKEN,
-  },
-});
-
-const openProjectApi = axios.create({
-  baseURL: `${process.env.OPENPROJECT_HOST}/api/v3`,
-  headers: {
-    Authorization: `Basic ${Buffer.from(
-      `apikey:${process.env.OPENPROJECT_API_KEY}`
-    ).toString("base64")}`,
-    "Content-Type": "application/json",
-  },
-});
 
 const onlyJira = process.argv.includes("--jira-only");
 const onlyOpenProject = process.argv.includes("--openproject-only");

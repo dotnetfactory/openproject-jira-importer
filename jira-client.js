@@ -1,7 +1,7 @@
 require("dotenv").config();
-const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
+const { jiraApi, downloadClient } = require("./apis.js");
 
 
 // Force console.log to also write to stderr
@@ -9,22 +9,6 @@ console.log = (...args) => {
   process.stderr.write(args.join(" ") + "\n");
 };
 
-// Jira API configuration
-const jiraConfig = {
-  baseURL: `https://${process.env.JIRA_HOST}/rest/api/2`,
-  auth: {
-    username: process.env.JIRA_EMAIL,
-    password: process.env.JIRA_API_TOKEN,
-  },
-};
-
-const jiraApi = axios.create(jiraConfig);
-
-// Create a download client without default content-type
-const downloadClient = axios.create({
-  ...jiraConfig,
-  responseType: "arraybuffer",
-});
 
 const DEFAULT_FIELDS = [
   "summary",

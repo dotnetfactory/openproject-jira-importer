@@ -1,28 +1,4 @@
-require("dotenv").config();
-const axios = require("axios");
-
-// Jira API configuration
-const jiraConfig = {
-  baseURL: `https://${process.env.JIRA_HOST}/rest/api/2`,
-  auth: {
-    username: process.env.JIRA_EMAIL,
-    password: process.env.JIRA_API_TOKEN,
-  },
-};
-
-// OpenProject API configuration
-const openProjectConfig = {
-  baseURL: `${process.env.OPENPROJECT_HOST}/api/v3`,
-  headers: {
-    Authorization: `Basic ${Buffer.from(
-      `apikey:${process.env.OPENPROJECT_API_KEY}`
-    ).toString("base64")}`,
-    "Content-Type": "application/json",
-  },
-};
-
-const jiraApi = axios.create(jiraConfig);
-const openProjectApi = axios.create(openProjectConfig);
+const { jiraApi, openProjectApi } = require("./apis.js");
 
 async function getJiraUsers() {
   try {

@@ -1,19 +1,6 @@
-require("dotenv").config();
-const axios = require("axios");
 const { getJiraEpicLinkFieldId } = require("./jira-client");
+const { openProjectApi } = require("./apis.js");
 
-// OpenProject API configuration
-const openProjectConfig = {
-  baseURL: `${process.env.OPENPROJECT_HOST}/api/v3`,
-  headers: {
-    Authorization: `Basic ${Buffer.from(
-      `apikey:${process.env.OPENPROJECT_API_KEY}`
-    ).toString("base64")}`,
-    "Content-Type": "application/json",
-  },
-};
-
-const openProjectApi = axios.create(openProjectConfig);
 
 // Store issue key to work package ID mapping
 const issueToWorkPackageMap = new Map();
