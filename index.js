@@ -12,7 +12,7 @@ const {
   DEFAULT_FIELDS,
 } = require("./jira-client");
 const { generateMapping } = require("./generate-user-mapping");
-const { generateMapping: generateStatusMapping } = require("./generate-status-mapping");
+const { generateMapping: generateStatusMapping, saveMapping } = require("./generate-user-mapping");
 const {
   getOpenProjectWorkPackages,
   createWorkPackage,
@@ -27,11 +27,12 @@ const {
   getOpenProjectUsers,
   findExistingWorkPackage,
   JIRA_ID_CUSTOM_FIELD,
-  requireJiraIdField,
   getWorkPackagePriorityId,
   getWorkPackagePriorities,
   addWatcher,
   getCustomFieldOptionsMap,
+  createOpenProjectUser,
+  getRoleList,
 } = require("./openproject-client");
 
 // Load custom field mapping (graceful fallback if not configured)
@@ -55,6 +56,8 @@ if (!fs.existsSync(tempDir)) {
 let statusMapping = null;
 let defaultStatus = null;
 let userMapping = null;
+let createMissingUsers = false;
+let missingMembers = { add: false, role: "" };
 
 async function getOpenProjectUserId(jiraUser) {
   if (!jiraUser) {
@@ -73,6 +76,16 @@ async function getOpenProjectUserId(jiraUser) {
   console.log(
     `No OpenProject user mapping found for Jira user ${jiraUser.displayName}`
   );
+
+  if (createMissingUsers && jiraUser.emailAddress) {
+    console.log("Creating new user");
+
+    const newUser = await createOpenProjectUser(jiraUser);
+    userMapping[jiraUser.accountId] = newUser.id;
+    saveMapping(userMapping);
+    return newUser.id;
+  }
+
   return null;
 }
 
@@ -137,6 +150,30 @@ async function migrateIssues(
   } catch (error) {
     console.log("No existing status mapping found. Generating new mapping...");
     ({ statusMapping, defaultStatus } = await generateStatusMapping());
+  }
+    
+  ({ confirm: createMissingUsers } = await inquirer.prompt({
+        type: "confirm",
+        name: "confirm",
+        message: "Would you like to create / invite users from the imported work items if they don't exist in OpenProject, yet?"
+      }));
+  
+  ({ confirm: missingMembers.add } = await inquirer.prompt({
+        type: "confirm",
+        name: "confirm",
+        message: "Would you like to automatically add users to the project, if they are related to a work package?"
+      }));
+
+  if (missingMembers.add) {
+    const availableRoles = await getRoleList();
+    ({ defaultRole: missingMembers.role } = await inquirer.prompt([
+            {
+              type: "list",
+              name: "defaultRole",
+              message: "With which roles should new Users be added to a Project?",
+              choices: availableRoles.map((role) => { return { name: role.name, value: role._links.self.href } }),
+            },
+          ]));
   }
 
   // List available projects
@@ -306,10 +343,10 @@ async function migrateIssues(
         if (payload._links?.status) {
           delete payload._links.status;
         }
-        workPackage = await updateWorkPackage(existingWorkPackage.id, payload);
+        workPackage = await updateWorkPackage(existingWorkPackage.id, payload, missingMembers);
       } else {
         console.log("Creating new work package");
-        workPackage = await createWorkPackage(openProjectId, payload);
+        workPackage = await createWorkPackage(openProjectId, payload, missingMembers);
       }
 
       issueToWorkPackageMap.set(issue.key, workPackage.id);
@@ -377,7 +414,7 @@ async function migrateIssues(
         for (const watcher of watchers.watchers) {
           const watcherId = await getOpenProjectUserId(watcher);
           if (watcherId) {
-            await addWatcher(workPackage.id, watcherId);
+            await addWatcher(workPackage.id, watcherId, missingMembers, openProjectId);
           }
         }
       }

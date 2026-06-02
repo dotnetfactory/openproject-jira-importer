@@ -44,6 +44,11 @@ async function generateMapping() {
     // Fetch users from both systems
     const jiraUsers = await getJiraUsers();
     const openProjectUsers = await getOpenProjectUsers();
+    const openProjectUsersByMail = {};
+    for (const openProjectUser of openProjectUsers) {
+      if (!openProjectUser.email) continue; 
+      openProjectUsersByMail[openProjectUser.email.toLowerCase()] = openProjectUser;
+    }
 
     console.log("\nJira Users:");
     jiraUsers.forEach((user) => {
@@ -83,14 +88,21 @@ async function generateMapping() {
 
       let choices = openProjectChoices;
       // #31: Pre-fill existing mapping if available
+      let existingAnswer = null;
       if (existingMapping) {
-        const existingAnswer = openProjectChoices.find(
+        existingAnswer = openProjectChoices.find(
           (choice) => choice.value === existingMapping[jiraUser.accountId]
         );
         if (existingAnswer) {
           // Add existing answer first so that it appears selected
           choices = [existingAnswer, ...openProjectChoices];
         }
+      }
+
+      // Pre Select an open project user with the same email address
+      if ((!existingAnswer) && jiraUser.emailAddress && openProjectUsersByMail[jiraUser.emailAddress.toLowerCase()]) {
+        const foundUser = openProjectUsersByMail[jiraUser.emailAddress.toLowerCase()];
+        choices = [ { name: `${foundUser.name} (${foundUser.email})`, value: foundUser.id }, ...openProjectChoices ]
       }
 
       const answer = await inquirer.prompt([
@@ -109,15 +121,7 @@ async function generateMapping() {
       }
     }
 
-    // Save mapping to file
-    const mappingContent = `// Generated user mapping - ${new Date().toISOString()}
-const userMapping = ${JSON.stringify(mapping, null, 2)};
-
-module.exports = userMapping;
-`;
-
-    fs.writeFileSync(path.join(__dirname, "user-mapping.generated.js"), mappingContent);
-    console.log("\nUser mapping has been saved to user-mapping.generated.js");
+    saveMapping(mapping);
 
     return mapping;
   } catch (error) {
@@ -126,9 +130,21 @@ module.exports = userMapping;
   }
 }
 
+function saveMapping(mapping) {
+  // Save mapping to file
+    const mappingContent = `// Generated user mapping - ${new Date().toISOString()}
+const userMapping = ${JSON.stringify(mapping, null, 2)};
+
+module.exports = userMapping;
+`;
+
+    fs.writeFileSync(path.join(__dirname, "user-mapping.generated.js"), mappingContent);
+    console.log("\nUser mapping has been saved to user-mapping.generated.js");
+}
+
 // If running directly (not imported)
 if (require.main === module) {
   generateMapping().catch(console.error);
 }
 
-module.exports = { generateMapping };
+module.exports = { generateMapping, saveMapping };

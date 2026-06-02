@@ -1,3 +1,4 @@
+require("dotenv").config();
 const axios = require("axios");
 
 // OpenProject API configuration
