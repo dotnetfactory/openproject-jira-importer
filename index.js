@@ -148,6 +148,10 @@ async function migrateIssues(
       ({ statusMapping, defaultStatus } = await generateStatusMapping());
     }
   } catch (error) {
+    if (error.code !== "MODULE_NOT_FOUND") {
+      console.error("Error loading existing status mapping:", error);
+      throw error;
+    }
     console.log("No existing status mapping found. Generating new mapping...");
     ({ statusMapping, defaultStatus } = await generateStatusMapping());
   }

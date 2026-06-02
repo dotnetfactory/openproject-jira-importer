@@ -76,7 +76,7 @@ async function saveMapping (mapping, defaultStatus) {
     // Save mapping to file
     const mappingContent = `// Generated status mapping - ${new Date().toISOString()}
 const statusMapping = ${JSON.stringify(mapping, null, 2)};
-const defaultStatus = "${defaultStatus}";
+ const defaultStatus = ${JSON.stringify(defaultStatus)};
 
 module.exports = { statusMapping, defaultStatus };
 `;
