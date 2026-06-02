@@ -11,8 +11,8 @@ const {
   getIssueWatchers,
   DEFAULT_FIELDS,
 } = require("./jira-client");
-const { generateMapping } = require("./generate-user-mapping");
-const { generateMapping: generateStatusMapping, saveMapping } = require("./generate-user-mapping");
+const { generateMapping, saveMapping } = require("./generate-user-mapping");
+const { generateMapping: generateStatusMapping } = require("./generate-status-mapping");
 const {
   getOpenProjectWorkPackages,
   createWorkPackage,
