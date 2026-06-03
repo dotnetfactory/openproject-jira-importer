@@ -12,6 +12,7 @@ const {
   DEFAULT_FIELDS,
 } = require("./jira-client");
 const { generateMapping, saveMapping } = require("./generate-user-mapping");
+const { generateMapping: generateStatusMapping } = require("./generate-status-mapping");
 const {
   getOpenProjectWorkPackages,
   createWorkPackage,
@@ -21,7 +22,6 @@ const {
   getWorkPackageTypes,
   getWorkPackageStatuses,
   getWorkPackageTypeId,
-  getWorkPackageStatusId,
   getExistingAttachments,
   getExistingComments,
   getOpenProjectUsers,
@@ -53,6 +53,8 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
 
+let statusMapping = null;
+let defaultStatus = null;
 let userMapping = null;
 let createMissingUsers = false;
 let missingMembers = { add: false, role: "" };
@@ -130,6 +132,30 @@ async function migrateIssues(
     userMapping = await generateMapping();
   }
 
+  // Generate or load status mapping
+  console.log("\nChecking status mapping...");
+  try {
+    ({ statusMapping, defaultStatus } = require(path.join(__dirname, "status-mapping.generated.js")));
+    const shouldUpdate = await inquirer.prompt([
+      {
+        type: "confirm",
+        name: "update",
+        message: "Existing status mapping found. Would you like to update it?",
+        default: false,
+      },
+    ]);
+    if (shouldUpdate.update) {
+      ({ statusMapping, defaultStatus } = await generateStatusMapping());
+    }
+  } catch (error) {
+    if (error.code !== "MODULE_NOT_FOUND") {
+      console.error("Error loading existing status mapping:", error);
+      throw error;
+    }
+    console.log("No existing status mapping found. Generating new mapping...");
+    ({ statusMapping, defaultStatus } = await generateStatusMapping());
+  }
+    
   ({ confirm: createMissingUsers } = await inquirer.prompt({
         type: "confirm",
         name: "confirm",
@@ -265,9 +291,7 @@ async function migrateIssues(
             )}`,
           },
           status: {
-            href: `/api/v3/statuses/${getWorkPackageStatusId(
-              issue.fields.status.name
-            )}`,
+            href: statusMapping[issue.fields.status.id] ?? defaultStatus,
           },
           priority: {
             href: `/api/v3/priorities/${getWorkPackagePriorityId(

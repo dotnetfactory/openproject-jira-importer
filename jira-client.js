@@ -26,6 +26,20 @@ const DEFAULT_FIELDS = [
   "watches",
 ];
 
+async function getAllJiraStatuses() {
+  console.log("Loading Jira Statuses");
+  try {
+    return (await jiraApi.get("/status")).data;
+  } catch (error) {
+    console.error("Error fetching Jira Statuses:");
+    if (error.response) {
+      console.error(`Status code: ${error.response.status}`);
+      console.error("Response data:", error.response.data);
+    }
+    throw error;
+  }
+}
+
 async function getAllJiraIssues(projectKey, fields = DEFAULT_FIELDS.join(",")) {
   console.log('getAllJiraIssues');
   try {
@@ -285,6 +299,7 @@ async function getIssueWatchers(issueKey) {
 }
 
 module.exports = {
+  getAllJiraStatuses,
   getAllJiraIssues,
   getSpecificJiraIssues,
   getJiraUserEmail,

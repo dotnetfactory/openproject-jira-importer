@@ -38,15 +38,6 @@ const typeMapping = {
   Milestone: "Milestone",
 };    
 
-// Map Jira statuses to OpenProject statuses
-const statusMapping = {
-  "To Do": "New",
-  "In Progress": "In progress",
-  Done: "Closed",
-  Closed: "Closed",
-  Resolved: "Closed",
-};
-
 // Map Jira priorities to OpenProject priorities
 const priorityMapping = {
   Highest: "Immediate",
@@ -492,12 +483,14 @@ async function getWorkPackageTypes(projectId) {
 
 async function getWorkPackageStatuses() {
   try {
-    const response = await openProjectApi.get("/statuses");
-    workPackageStatuses = response.data._embedded.elements;
-    console.log("\nAvailable work package statuses:");
-    workPackageStatuses.forEach((status) => {
-      console.log(`- ${status.name} (ID: ${status.id})`);
-    });
+    if (!workPackageStatuses) {
+      const response = await openProjectApi.get("/statuses");
+      workPackageStatuses = response.data._embedded.elements;
+      console.log("\nAvailable work package statuses:");
+      workPackageStatuses.forEach((status) => {
+        console.log(`- ${status.name} (ID: ${status.id})`);
+      });
+    }
     return workPackageStatuses;
   } catch (error) {
     console.error("Error fetching work package statuses:", error.message);
@@ -536,24 +529,6 @@ function getWorkPackageTypeId(jiraIssueType) {
     `Mapped to OpenProject type: ${typeObj.name} (ID: ${typeObj.id})`
   );
   return typeObj.id;
-}
-
-function getWorkPackageStatusId(jiraStatus) {
-  console.log(`Mapping Jira status: ${jiraStatus}`);
-  const mappedStatus = statusMapping[jiraStatus] || "New"; // Default to New if no mapping found
-  const statusObj = workPackageStatuses.find(
-    (s) => s.name.toLowerCase() === mappedStatus.toLowerCase()
-  );
-  if (!statusObj) {
-    console.warn(
-      `Could not find OpenProject status for ${jiraStatus} (mapped to ${mappedStatus})`
-    );
-    return workPackageStatuses[0].id; // Default to first status
-  }
-  console.log(
-    `Mapped to OpenProject status: ${statusObj.name} (ID: ${statusObj.id})`
-  );
-  return statusObj.id;
 }
 
 function getWorkPackagePriorityId(jiraPriority) {
@@ -725,7 +700,7 @@ module.exports = {
   getWorkPackageStatuses,
   getWorkPackagePriorities,
   getWorkPackageTypeId,
-  getWorkPackageStatusId,
+
   getWorkPackagePriorityId,
   getExistingAttachments,
   getExistingComments,
@@ -734,7 +709,6 @@ module.exports = {
   getWorkPackageTypeName,
   getWorkPackageStatusName,
   typeMapping,
-  statusMapping,
   priorityMapping,
   JIRA_ID_CUSTOM_FIELD,
   requireJiraIdField,
