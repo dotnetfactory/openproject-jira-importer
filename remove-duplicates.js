@@ -1,4 +1,4 @@
-const { JIRA_ID_CUSTOM_FIELD } = require("./openproject-client");
+const { JIRA_ID_CUSTOM_FIELD, validateJiraIdCustomField } = require("./openproject-client");
 const { openProjectApi } = require("./apis.js");
 
 async function getAllWorkPackages(projectId) {
@@ -136,6 +136,8 @@ async function deleteWorkPackage(workPackageId) {
 
 async function removeDuplicates(projectId) {
   try {
+    await validateJiraIdCustomField(projectId);
+
     // Get all work packages
     const workPackages = await getAllWorkPackages(projectId);
 

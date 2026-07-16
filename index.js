@@ -25,7 +25,6 @@ const {
   getExistingAttachments,
   getExistingComments,
   getOpenProjectUsers,
-  findExistingWorkPackage,
   JIRA_ID_CUSTOM_FIELD,
   getWorkPackagePriorityId,
   getWorkPackagePriorities,
@@ -212,17 +211,15 @@ async function migrateIssues(
     );
   }
 
-  // Cache OpenProject work packages if skipUpdates is enabled
-  let openProjectWorkPackagesCache = null;
-  if (skipUpdates) {
-    console.log("Caching OpenProject work packages...");
-    openProjectWorkPackagesCache = await getOpenProjectWorkPackages(
-      openProjectId
-    );
-    console.log(
-      `Found ${openProjectWorkPackagesCache.size} work packages in OpenProject`
-    );
-  }
+  // Cache OpenProject work packages so duplicate detection is consistent
+  // whether we're skipping or updating existing issues.
+  console.log("Caching OpenProject work packages...");
+  const openProjectWorkPackagesCache = await getOpenProjectWorkPackages(
+    openProjectId
+  );
+  console.log(
+    `Found ${openProjectWorkPackagesCache.size} work packages in OpenProject`
+  );
 
   // Build Jira fields list including custom fields from mapping
   const jiraFields = buildJiraFieldsList(customFieldMapping);
@@ -246,15 +243,7 @@ async function migrateIssues(
       console.log(`\nProcessing ${issue.key}...`);
 
       // Check if work package already exists
-      let existingWorkPackage = null;
-      if (skipUpdates) {
-        existingWorkPackage = openProjectWorkPackagesCache.get(issue.key);
-      } else {
-        existingWorkPackage = await findExistingWorkPackage(
-          issue.key,
-          openProjectId
-        );
-      }
+      const existingWorkPackage = openProjectWorkPackagesCache.get(issue.key);
 
       if (existingWorkPackage && skipUpdates) {
         console.log(
