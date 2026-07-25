@@ -8,7 +8,6 @@ const openProjectConfig = {
     Authorization: `Basic ${Buffer.from(
       `apikey:${process.env.OPENPROJECT_API_KEY}`
     ).toString("base64")}`,
-    "Content-Type": "application/json",
   },
 };
 
