@@ -22,6 +22,44 @@ function requireJiraIdField() {
   return JIRA_ID_CUSTOM_FIELD;
 }
 
+// Confirms JIRA_ID_CUSTOM_FIELD actually matches a custom field available on
+// the target project. A mismatched/stale ID makes duplicate detection
+// silently see 0 matches and re-create every issue on every run, so this
+// fails loudly instead.
+//
+// Uses the work-package creation form rather than the admin-only
+// GET /custom_fields endpoint (which 404s for non-admin API keys) — the form
+// only requires "add work packages" permission on the project, which the
+// importer already needs to function at all.
+async function validateJiraIdCustomField(projectId) {
+  const fieldId = requireJiraIdField();
+  const key = `customField${fieldId}`;
+
+  const response = await openProjectApi.post("/work_packages/form", {
+    _links: { project: { href: `/api/v3/projects/${projectId}` } },
+  });
+  const schema = response.data._embedded?.schema;
+  const fieldSchema = schema?.[key];
+
+  if (!fieldSchema) {
+    throw new Error(
+      `JIRA_ID_CUSTOM_FIELD=${fieldId} does not match any custom field available on project ${projectId}. ` +
+      `Run 'node discover-custom-fields.js ${projectId}' to find the correct ID and update your .env file.`
+    );
+  }
+
+  if (fieldSchema.type && !/string/i.test(fieldSchema.type)) {
+    console.error(
+      `\nWARNING: custom field "${fieldSchema.name}" (ID ${fieldId}) has type "${fieldSchema.type}". ` +
+      "Duplicate detection relies on this field's value being a plain string; " +
+      "long-text/formattable custom fields may not round-trip as expected. " +
+      "Recreate it as a plain \"String\" (short text) field if you see missed duplicates.\n"
+    );
+  }
+
+  return fieldSchema;
+}
+
 // Store work package types and statuses
 let workPackageTypes = null;
 let workPackageStatuses = null;
@@ -49,6 +87,7 @@ const priorityMapping = {
 
 async function getOpenProjectWorkPackages(projectId) {
   console.log("\n=== Caching OpenProject Work Packages ===");
+  await validateJiraIdCustomField(projectId);
   console.log("Fetching work packages from OpenProject...");
 
   let allWorkPackages = [];
@@ -590,39 +629,6 @@ async function getOpenProjectUsers() {
   }
 }
 
-async function findExistingWorkPackage(jiraKey, projectId) {
-  const fieldId = JIRA_ID_CUSTOM_FIELD;
-  if (!fieldId) return null;
-
-  try {
-    const response = await openProjectApi.get("/work_packages", {
-      params: {
-        filters: JSON.stringify([
-          { project: { operator: "=", values: [projectId.toString()] } },
-          {
-            [`customField${fieldId}`]: {
-              operator: "=",
-              values: [jiraKey],
-            },
-          },
-        ]),
-      },
-    });
-
-    const workPackages = response.data._embedded.elements;
-    return workPackages.length > 0 ? workPackages[0] : null;
-  } catch (error) {
-    console.error(`Error finding existing work package: ${error.message}`);
-    if (error.response?.data) {
-      console.error(
-        "Error details:",
-        JSON.stringify(error.response.data, null, 2)
-      );
-    }
-    return null;
-  }
-}
-
 function getWorkPackageTypeName(typeId) {
   const type = workPackageTypes?.find((t) => t.id === typeId);
   return type ? type.name : "Unknown";
@@ -705,12 +711,12 @@ module.exports = {
   getExistingAttachments,
   getExistingComments,
   getOpenProjectUsers,
-  findExistingWorkPackage,
   getWorkPackageTypeName,
   getWorkPackageStatusName,
   typeMapping,
   priorityMapping,
   JIRA_ID_CUSTOM_FIELD,
   requireJiraIdField,
+  validateJiraIdCustomField,
   getCustomFieldOptionsMap,
 };

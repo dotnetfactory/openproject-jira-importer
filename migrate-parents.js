@@ -4,7 +4,6 @@ const {
   getOpenProjectWorkPackages,
   setParentWorkPackage,
   listProjects,
-  JIRA_ID_CUSTOM_FIELD,
 } = require("./openproject-client");
 
 async function migrateParents(jiraProjectKey, openProjectId, specificIssues) {
@@ -13,32 +12,9 @@ async function migrateParents(jiraProjectKey, openProjectId, specificIssues) {
   // List available projects
   await listProjects();
 
-  // Get work packages from OpenProject
+  // Get work packages from OpenProject, already keyed by Jira issue key
   console.log(`\nFetching work packages for project ${openProjectId}...`);
-  const workPackages = await getOpenProjectWorkPackages(openProjectId);
-
-  // Create a map of Jira keys to work package IDs
-  const jiraKeyToWorkPackageId = new Map();
-  const jiraIdField = JIRA_ID_CUSTOM_FIELD;
-  workPackages.forEach((wp) => {
-    const jiraKey = jiraIdField ? wp[`customField${jiraIdField}`] : null;
-    if (jiraKey) {
-      jiraKeyToWorkPackageId.set(jiraKey, wp.id);
-    }
-  });
-
-  console.log("\nCache Summary:");
-  console.log(`- Total work packages: ${workPackages.length}`);
-  console.log(`- Work packages with Jira ID: ${jiraKeyToWorkPackageId.size}`);
-  console.log(
-    `- Work packages without Jira ID: ${
-      workPackages.length - jiraKeyToWorkPackageId.size
-    }`
-  );
-  console.log(
-    `- Cached ${jiraKeyToWorkPackageId.size} work packages for quick lookup`
-  );
-  console.log("=======================================\n");
+  const jiraKeyToWorkPackage = await getOpenProjectWorkPackages(openProjectId);
 
   // Get Jira issues
   const jiraIssues = specificIssues
@@ -68,8 +44,8 @@ async function migrateParents(jiraProjectKey, openProjectId, specificIssues) {
       console.log(`Found parent ${parentKey} for ${issue.key}`);
 
       // Get the work package IDs
-      const workPackageId = jiraKeyToWorkPackageId.get(issue.key);
-      const parentWorkPackageId = jiraKeyToWorkPackageId.get(parentKey);
+      const workPackageId = jiraKeyToWorkPackage.get(issue.key)?.id;
+      const parentWorkPackageId = jiraKeyToWorkPackage.get(parentKey)?.id;
 
       if (!workPackageId || !parentWorkPackageId) {
         console.error(
