@@ -340,6 +340,7 @@ async function migrateIssues(
       } else {
         console.log("Creating new work package");
         workPackage = await createWorkPackage(openProjectId, payload, missingMembers);
+        if (workPackage) openProjectWorkPackagesCache.set(issue.key, workPackage);
       }
 
       issueToWorkPackageMap.set(issue.key, workPackage.id);
